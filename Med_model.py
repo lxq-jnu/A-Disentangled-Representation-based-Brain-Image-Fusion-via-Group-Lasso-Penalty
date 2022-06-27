@@ -102,7 +102,7 @@ class MedModel(BaseModel):
 
             if not opt.no_vgg_loss:
                 self.criterionVGG = networks.VGGLoss(self.gpu_ids)
-            self.criterionSSIM = networks.SSIM()  # SSIM 结构相似性损失作为图像的重构损失
+            self.criterionSSIM = networks.SSIM()  
             self.criterionL1 = torch.nn.L1Loss()
             self.criterionTV = networks.TVLoss()
             self.criterionKLD = torch.nn.KLDivLoss()
@@ -308,22 +308,21 @@ class SobelConv(nn.Module):
         return x
 
 class LaplacianConv(nn.Module):
-    # 仅有一个参数，通道，用于自定义算子模板的通道
+
     def __init__(self, channels=1):
         super().__init__()
         self.channels = channels
         kernel = [[0, 1, 0],
                   [1, -4, 1],
                   [0, 1, 0]]
-        kernel = torch.FloatTensor(kernel).unsqueeze(0).unsqueeze(0)  # 扩展到3个维度
-        kernel = np.repeat(kernel, self.channels, axis=0)  # 3个通道都是同一个算子
+        kernel = torch.FloatTensor(kernel).unsqueeze(0).unsqueeze(0)  
+        kernel = np.repeat(kernel, self.channels, axis=0)  
         #self.pad = nn.ReflectionPad2d(1)
         self.pad = nn.ReplicationPad2d(1)
-        self.weight = nn.Parameter(data=kernel, requires_grad=False)  # 不允许求导更新参数，保持常量
+        self.weight = nn.Parameter(data=kernel, requires_grad=False)  
 
     def __call__(self, x):
-        # 第一个参数为输入，由于这里只是测试，随便打开的一张图只有3个维度，pytorch需要处理4个维度的样本，因此需要添加一个样本数量的维度
-        # padding2是为了能够照顾到边角的元素
+      
         self.weight.data = self.weight.data.to(x.device)
         x = self.pad(x)
 
@@ -351,9 +350,8 @@ class Regularization(nn.Module):
 
     def forward(self, ir,vi):
 
-        reg_loss = self.regularization_loss2(ir,vi)
-        #reg_loss = self.regularization_loss5(ir, vi)
-        #reg_loss = self.regularization_loss6(ir, vi) #CT-MRI
+        reg_loss = self.regularization_loss5(ir, vi)
+    
 
         return reg_loss
 
@@ -398,163 +396,6 @@ class Regularization(nn.Module):
 
         return (h_norm/count_h+w_norm/count_w)/batch_size
 
-
-    def regularization_loss2(self, ir, vi):
-        '''
-        Compute tensor norm
-        :param weight_list:
-        :param weight_decay:
-        :return:
-        '''
-        reg_loss = 0
-
-        ir_0 = ir
-        vi_0 = vi
-
-        ir = nn.AvgPool2d(kernel_size=3,stride=1,padding=1)(ir)
-        vi = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)(vi)
-
-        batch_size = ir.size()[0]
-        count = self._tensor_size(ir)
-
-
-        l_reg1 = (torch.norm(torch.flatten(ir_0), p=1) + torch.norm(torch.flatten(vi_0), p=1))/batch_size/count
-
-        dep = self.r(ir,vi)#(n,h,w)
-
-        cat = torch.cat([ir_0,vi_0],dim=1) #(n,c*2,h,w)
-        l_reg2 =  torch.norm(torch.pow(dep,2) *self.smooth(cat),p=1)/batch_size/count
-        #l_reg2 = torch.norm(torch.pow(dep, 2) * self.smooth(ir), p=1) / batch_size / count \
-        #         + torch.norm(torch.pow(dep, 2) * self.smooth(vi), p=1) / batch_size / count
-        #norm_ir = torch.norm(ir,p=2,dim=1)
-        #norm_vi = torch.norm(vi, p=2, dim=1)
-
-        norm_ir = self.smooth(ir_0)
-        norm_vi = self.smooth(vi_0)
-        norm_mul = norm_ir*norm_vi
-        dep_count = torch.ones_like(dep)- dep
-        l_reg3 = torch.norm(torch.pow(dep_count,2)*norm_mul,p=1)/batch_size/count
-
-        #l_reg4 = self.tv(ir) + self.tv(vi)
-
-
-
-        reg_loss =  l_reg1*0 + l_reg2*10 + l_reg3*0
-        #reg_loss =  l_reg1*10 + l_reg2*20 +  l_reg3*20 + 10 * l_reg4
-
-        return reg_loss
-
-
-
-
-
-    def regularization_loss3(self, ir, vi):
-        '''
-        Compute tensor norm
-        :param weight_list:
-        :param weight_decay:
-        :return:
-        '''
-        reg_loss = 0
-
-        ir_0 = ir
-        vi_0 = vi
-
-        ir = nn.AvgPool2d(kernel_size11,stride=1,padding=1)(ir)
-        vi = nn.AvgPool2d(kernel_size=11, stride=1, padding=1)(vi)
-
-        batch_size = ir.size()[0]
-        count = self._tensor_size(ir)
-
-
-        l_reg1 = (torch.norm(torch.flatten(ir_0), p=1) + torch.norm(torch.flatten(vi_0), p=1))/batch_size/count
-        #l_reg1 = (torch.norm(self.smooth(ir_0), p=1) + torch.norm(self.smooth(vi_0), p=1)) / batch_size / count
-
-        dep = self.r(ir,vi)#(n,h,w)
-        dep_count = torch.ones_like(dep) - dep
-
-        C1 = 0.001
-        k = torch.ones_like(dep)/(torch.pow(dep,2)+C1)
-
-        #print(k)
-
-        #w1 = 1/(1+torch.exp(k*torch.log(torch.norm(ir_0,p=1,dim=1)+C1)-k*torch.log((torch.norm(vi_0,p=1,dim=1)+C1))))
-        w1 = torch.sigmoid(k*torch.log(torch.norm(vi,p=1,dim=1)+C1)-k*torch.log(torch.norm(ir,p=1,dim=1)+C1))
-        w2 = 1-w1
-        l_reg2 = torch.norm((torch.pow(dep_count,2))*(w1*self.smooth(ir_0) + w2*self.smooth(vi_0)),p=1)/batch_size/count
-
-        #cat = torch.cat([ir,vi],dim=1) #(n,c*2,h,w)
-        #l_reg2 =  torch.norm(torch.pow(dep,2) *self.smooth(cat),p=1)/batch_size/count
-        #l_reg2 = torch.norm(torch.pow(dep, 2) * self.smooth(ir), p=1) / batch_size / count \
-        #         + torch.norm(torch.pow(dep, 2) * self.smooth(vi), p=1) / batch_size / count
-        #norm_ir = torch.norm(ir,p=2,dim=1)
-        #norm_vi = torch.norm(vi, p=2, dim=1)
-
-
-        #l_reg4 = self.tv(ir) + self.tv(vi)
-
-        cat = torch.cat([ir_0, vi_0], dim=1)  # (n,c*2,h,w)
-        l_reg3 = torch.norm(torch.pow(dep, 4) * self.smooth(cat), p=1) / batch_size / count
-
-
-
-
-        reg_loss =  l_reg1*5 + l_reg2 + l_reg3 #+ l_reg4*0.0
-
-        return reg_loss
-
-    def regularization_loss4(self, ir, vi):
-        '''
-        Compute tensor norm
-        :param weight_list:
-        :param weight_decay:
-        :return:
-        '''
-        reg_loss = 0
-
-        ir_0 = ir
-        vi_0 = vi
-
-        #ir = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)(ir)
-        #vi = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)(vi)
-
-        batch_size = ir.size()[0]
-        count = self._tensor_size(ir)
-        #count = 1.0
-
-        l_reg1 = (torch.norm(torch.flatten(ir_0), p=1) + torch.norm(torch.flatten(vi_0), p=1)) / batch_size / count
-        # l_reg1 = (torch.norm(self.smooth(ir_0), p=1) + torch.norm(self.smooth(vi_0), p=1)) / batch_size / count
-
-        dep = self.r(ir, vi)  # (n,h,w)
-        dep_count = torch.ones_like(dep) - dep
-
-        C1 = 0.001
-        #k = torch.ones_like(dep) / (torch.pow(dep, 2) + C1)
-        k = torch.ones_like(dep) / (torch.abs(dep) + C1)
-        #k=1
-        # print(k)
-
-        _, y1 = self.compute_neighnour_differences(x1)
-        _, y2 = self.compute_neighnour_differences(x2)
-
-
-
-        w1 = torch.sigmoid(
-            k * torch.log(y1 + C1) - k * torch.log(y2 + C1))
-        #w1 = torch.sigmoid(
-        #    k * torch.log(torch.norm(vi, p=1, dim=1) + C1) - k * torch.log(torch.norm(ir, p=1, dim=1) + C1))
-        w2 = 1 - w1
-        l_reg2 = torch.norm((w1 * self.smooth(ir_0) + w2 * self.smooth(vi_0)),
-                            p=1) / batch_size / count
-
-        cat = torch.cat([ir_0, vi_0], dim=1)  # (n,c*2,h,w)
-        l_reg3 = torch.norm(torch.abs(dep) * self.smooth(cat), p=1) / batch_size / count
-
-        #l_reg4 = self.tv(ir) + self.tv(vi)
-
-        reg_loss = 0*l_reg1 + l_reg2 + l_reg3*0  #+ l_reg4*0
-
-        return reg_loss
 
 
 
@@ -611,55 +452,7 @@ class Regularization(nn.Module):
         return reg_loss
 
 
-    def regularization_loss6(self, ir, vi):
-        '''
-        Compute tensor norm
-        :param weight_list:
-        :param weight_decay:
-        :return:
-        '''
-        reg_loss = 0
 
-        ir_0 = ir
-        vi_0 = vi
-
-        #ir = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)(ir)
-        #vi = nn.AvgPool2d(kernel_size=3, stride=1, padding=1)(vi)
-
-        batch_size = ir.size()[0]
-        count = self._tensor_size(ir)
-        #count = 1.0
-
-        #l_reg1 = (torch.norm(torch.flatten(ir_0), p=1) + torch.norm(torch.flatten(vi_0), p=1)) / batch_size / count
-        l_reg1 = (torch.norm(self.smooth(ir_0), p=1) + torch.norm(self.smooth(vi_0), p=1)) / batch_size / count
-
-        dep = self.r(ir, vi)  # (n,h,w)
-        dep_count = torch.ones_like(dep) - dep
-
-        C1 = 0.001
-        #k = torch.ones_like(dep) / (torch.pow(dep, 2) + C1)
-        k = torch.ones_like(dep) / (torch.pow(dep,4) + C1)
-        #k=1
-        # print(k)
-
-        mir,mvi = self.contrast(ir,vi)
-        #mir, mvi = self.measure(ir, vi)
-        # w1 = 1/(1+torch.exp(k*torch.log(torch.norm(ir_0,p=1,dim=1)+C1)-k*torch.log((torch.norm(vi_0,p=1,dim=1)+C1))))
-        w1 = torch.sigmoid(
-            k*torch.log(mvi + C1) -  k*torch.log(mir+ C1))
-        w2 = 1 - w1
-        l_reg2 = torch.norm( (w1 * self.smooth(ir_0) + w2 * self.smooth(vi_0)),
-                            p=1) / batch_size / count
-
-        cat = torch.cat([ir_0, vi_0], dim=1)  # (n,c*2,h,w)
-        l_reg3 = torch.norm(torch.abs(dep) * self.smooth(cat), p=1) / batch_size / count
-
-        l_reg4 = self.tv(ir) + self.tv(vi)
-
-        #reg_loss = 10*l_reg1 + l_reg2*1 + l_reg3*0  + l_reg4*0
-        reg_loss = 0 * l_reg1 + l_reg2 * 5 + l_reg3 * 0 + l_reg4 * 0
-
-        return reg_loss
 
 
 
