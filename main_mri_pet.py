@@ -155,22 +155,22 @@ netDe = networks.define_SimpleDe().cuda()
 
 
 
-model_EnC_path = "models/MRI-PET/latest_net_EnC.pth"
+model_EnC_path = "models/MRI-PET/800_net_EnC.pth"
 
 state_dict_EnC = torch.load(model_EnC_path, map_location=str(device))
 load_(netEnC,state_dict_EnC)
 
-model_EnSIR_path = "models/MRI-PET/latest_net_EnSIR.pth"
+model_EnSIR_path = "models/MRI-PET/800_net_EnSIR.pth"
 
 state_dict_EnSIR = torch.load(model_EnSIR_path, map_location=str(device))
 load_(netEnSIR,state_dict_EnSIR)
 
-model_EnSVI_path = "models/MRI-PET/latest_net_EnSVI.pth"
+model_EnSVI_path = "models/MRI-PET/800_net_EnSVI.pth"
 
 state_dict_EnSVI = torch.load(model_EnSVI_path, map_location=str(device))
 load_(netEnSVI,state_dict_EnSVI)
 
-model_netDe_path = "models/MRI-PET/latest_net_De.pth"
+model_netDe_path = "models/MRI-PET/800_net_De.pth"
 
 state_dict_netDe = torch.load(model_netDe_path, map_location=str(device))
 load_(netDe,state_dict_netDe)
